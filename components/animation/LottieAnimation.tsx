@@ -1,9 +1,21 @@
 "use client";
 
-import { useEffect, useMemo, useRef } from "react";
+import {
+  forwardRef,
+  useEffect,
+  useImperativeHandle,
+  useMemo,
+  useRef,
+} from "react";
 import lottie, { type AnimationItem } from "lottie-web";
 
 type LottiePosition = number | string;
+
+export type LottieAnimationHandle = {
+  pause: () => void;
+  play: () => void;
+  setSpeed: (value: number) => void;
+};
 
 type LottieAnimationProps = {
   lottieName: string;
@@ -21,6 +33,7 @@ type LottieAnimationProps = {
   zIndex?: number;
   className?: string;
   ariaLabel?: string;
+  onReady?: () => void;
 };
 
 function toCssLength(value: LottiePosition = 0) {
@@ -35,25 +48,34 @@ function resolveLottiePath(lottieName: string) {
   return `/assets/lottie/${lottieName}`;
 }
 
-export function LottieAnimation({
-  lottieName,
-  loop = true,
-  autoplay = true,
-  speed = 1,
-  delay = 0,
-  startOffset = 0,
-  size = "100%",
-  positionX = 0,
-  positionY = 0,
-  positionZ = 0,
-  left,
-  top,
-  zIndex,
-  className = "",
-  ariaLabel,
-}: LottieAnimationProps) {
+export const LottieAnimation = forwardRef<
+  LottieAnimationHandle,
+  LottieAnimationProps
+>(function LottieAnimation(
+  {
+    lottieName,
+    loop = true,
+    autoplay = true,
+    speed = 1,
+    delay = 0,
+    startOffset = 0,
+    size = "100%",
+    positionX = 0,
+    positionY = 0,
+    positionZ = 0,
+    left,
+    top,
+    zIndex,
+    className = "",
+    ariaLabel,
+    onReady,
+  },
+  ref,
+) {
   const containerRef = useRef<HTMLDivElement>(null);
   const animationRef = useRef<AnimationItem | null>(null);
+  const manuallyPausedRef = useRef(false);
+  const onReadyRef = useRef(onReady);
   const playbackRef = useRef({
     autoplay,
     delay,
@@ -64,6 +86,26 @@ export function LottieAnimation({
   const animationPath = useMemo(
     () => resolveLottiePath(lottieName),
     [lottieName],
+  );
+
+  useImperativeHandle(
+    ref,
+    () => ({
+      pause: () => {
+        manuallyPausedRef.current = true;
+        animationRef.current?.pause();
+      },
+      play: () => {
+        manuallyPausedRef.current = false;
+        if (!window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+          animationRef.current?.play();
+        }
+      },
+      setSpeed: (value) => {
+        animationRef.current?.setSpeed(value);
+      },
+    }),
+    [],
   );
 
   useEffect(() => {
@@ -77,15 +119,20 @@ export function LottieAnimation({
   }, [autoplay, delay, loop, speed, startOffset]);
 
   useEffect(() => {
+    onReadyRef.current = onReady;
+  }, [onReady]);
+
+  useEffect(() => {
     const container = containerRef.current;
 
     if (!container) {
       return;
     }
 
-    const reduceMotion = window.matchMedia(
+    const motionPreference = window.matchMedia(
       "(prefers-reduced-motion: reduce)",
-    ).matches;
+    );
+    const reduceMotion = motionPreference.matches;
     const playback = playbackRef.current;
 
     const shouldAutoplay = reduceMotion
@@ -104,6 +151,7 @@ export function LottieAnimation({
     });
     animationRef.current.setSpeed(playback.speed);
     let timeout: number | undefined;
+    let ready = false;
 
     const applyStartOffset = () => {
       const animation = animationRef.current;
@@ -122,13 +170,79 @@ export function LottieAnimation({
       const offsetFrame = currentStartOffset * frameRate;
       animation.goToAndPlay(offsetFrame, true);
     };
+    const showStillFrame = () => {
+      const animation = animationRef.current;
+
+      if (animation) {
+        const frame = playbackRef.current.startOffset > 0
+          ? playbackRef.current.startOffset * (animation.frameRate || 60)
+          : (animation.frameRate || 60) / 3;
+        animation.goToAndStop(Math.min(frame, animation.totalFrames - 1), true);
+      }
+    };
+    const handleReadyWithStartOffset = () => {
+      ready = true;
+      if (motionPreference.matches) {
+        showStillFrame();
+      } else {
+        applyStartOffset();
+      }
+      onReadyRef.current?.();
+    };
+    const handleReady = () => {
+      ready = true;
+      if (motionPreference.matches) {
+        showStillFrame();
+      } else if (
+        playbackRef.current.autoplay &&
+        !manuallyPausedRef.current &&
+        timeout === undefined
+      ) {
+        applyStartOffset();
+        animationRef.current?.play();
+      }
+
+      onReadyRef.current?.();
+    };
+    const handleMotionChange = () => {
+      const animation = animationRef.current;
+
+      animation?.setLoop(
+        motionPreference.matches ? false : playbackRef.current.loop,
+      );
+      if (!ready || !animation) {
+        return;
+      }
+
+      if (motionPreference.matches) {
+        showStillFrame();
+      } else if (
+        playbackRef.current.autoplay &&
+        !manuallyPausedRef.current &&
+        timeout === undefined
+      ) {
+        applyStartOffset();
+        animation.play();
+      }
+    };
+
+    motionPreference.addEventListener("change", handleMotionChange);
 
     if (!reduceMotion && playback.autoplay && playback.delay <= 0) {
-      animationRef.current.addEventListener("DOMLoaded", applyStartOffset);
+      animationRef.current.addEventListener(
+        "DOMLoaded",
+        handleReadyWithStartOffset,
+      );
+    } else {
+      animationRef.current.addEventListener("DOMLoaded", handleReady);
     }
 
     if (!reduceMotion && playback.autoplay && playback.delay > 0) {
       timeout = window.setTimeout(() => {
+        timeout = undefined;
+        if (motionPreference.matches) {
+          return;
+        }
         applyStartOffset();
         animationRef.current?.play();
       }, playback.delay * 1000);
@@ -139,7 +253,13 @@ export function LottieAnimation({
         window.clearTimeout(timeout);
       }
 
-      animationRef.current?.removeEventListener("DOMLoaded", applyStartOffset);
+      motionPreference.removeEventListener("change", handleMotionChange);
+
+      animationRef.current?.removeEventListener(
+        "DOMLoaded",
+        handleReadyWithStartOffset,
+      );
+      animationRef.current?.removeEventListener("DOMLoaded", handleReady);
       animationRef.current?.destroy();
       animationRef.current = null;
     };
@@ -170,4 +290,4 @@ export function LottieAnimation({
       }}
     />
   );
-}
+});

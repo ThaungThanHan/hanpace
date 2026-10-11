@@ -3,23 +3,20 @@ import { LoadingText } from "@/components/landing/loading/LoadingText";
 
 type LoadingScreenProps = {
   label?: string;
-  className?: string;
 };
 
 export function LoadingScreen({
-  label = "Loading",
-  className = "",
+  label = "Loading"
 }: LoadingScreenProps) {
   return (
     <div
-      className={`flex min-h-screen w-full flex-col items-center justify-center gap-8 bg-[#f6ead7] px-6 text-[#183c2e] ${className}`}
+      className={`flex min-h-screen w-full flex-col items-center justify-center bg-[#f6ead7] px-6 text-[#183c2e]`}
       role="status"
       aria-live="polite"
     >
       <LottieAnimation
-        lottieName="loading.json"
+        lottieName="walking.json"
         size={320}
-        speed={1}
         ariaLabel="Loading animation"
       />
       <LoadingText label={label} />
