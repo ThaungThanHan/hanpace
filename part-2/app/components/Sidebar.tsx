@@ -25,7 +25,7 @@ export default function Sidebar() {
           href="/timetable"
           aria-current={isTimetable ? "page" : undefined}
         >
-          TimeTable
+          Timetable
         </Link>
         <Link
           className={`flex min-h-[35px] items-center rounded-lg px-2.5 text-xs font-bold no-underline focus-visible:outline-[3px] focus-visible:outline-offset-[3px] focus-visible:outline-[#8dbb9a] md:min-h-11 md:px-4 md:text-sm ${isMembers
