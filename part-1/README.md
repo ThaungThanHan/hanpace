@@ -40,8 +40,6 @@ The scene is laid out on a 1920 x 1080 artboard and scaled to cover the viewport
 
 The crowd layout is generated once from a fixed seed, so character positions remain stable across renders. GSAP mainly animates transforms and opacity. Lottie uses progressive SVG loading, and crowd animations pause when the finale is active. The intro waits for the character animations to report ready before revealing the scene, with a timeout so loading cannot block indefinitely.
 
-The hero still runs about 20 Lottie instances, which may be demanding on slower devices. There is no virtualization or measured performance benchmark for this demo.
-
 ## Assumptions and Limits
 
 - The three slides are treated as the intro plus two navigable visual sections; there is no fourth section or page below them.
