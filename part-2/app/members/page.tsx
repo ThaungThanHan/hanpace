@@ -1,19 +1,21 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { DataTable, type DataTableColumn } from "../components/DataTable";
+import { DataTable } from "../components/data-table/DataTable";
+import type { DataTableColumn } from "../components/data-table/types";
+import { formatDateTime } from "../lib/formatDateTime";
 import type { MemberClassHistory } from "../../service/common/schema";
 import type { MemberWithClassHistory } from "../../service/members/interface";
 import { membersRepository } from "../../service/members/repository";
 
 const columns: DataTableColumn<MemberWithClassHistory>[] = [
-  { id: "name", header: "Name", accessor: "name", width: 190, tabletWidth: 160, mobileWidth: 140, pinned: true },
-  { id: "id", header: "Member ID", accessor: "id" },
-  { id: "email", header: "Email", accessor: "email" },
-  { id: "birthday", header: "Birthday", accessor: "birthday" },
-  { id: "membershipPlan", header: "Plan", accessor: "membershipPlan", sortable: false },
-  { id: "planExpiryDate", header: "Plan Expiry", accessor: "planExpiryDate" },
-  { id: "joinedAt", header: "Joined", accessor: "joinedAt" },
+  { id: "name", header: "Name", accessor: "name", width: 190, tabletWidth: 160, mobileWidth: 140, pinned: true, sortable: true },
+  { id: "id", header: "Member ID", accessor: "id", sortable: true },
+  { id: "email", header: "Email", accessor: "email", sortable: true },
+  { id: "birthday", header: "Birthday", accessor: "birthday", sortable: true },
+  { id: "membershipPlan", header: "Plan", accessor: "membershipPlan" },
+  { id: "planExpiryDate", header: "Plan Expiry", accessor: "planExpiryDate", sortable: true },
+  { id: "joinedAt", header: "Joined", accessor: "joinedAt", sortable: true },
 ];
 
 const expandedColumns: DataTableColumn<MemberClassHistory>[] = [
@@ -21,7 +23,7 @@ const expandedColumns: DataTableColumn<MemberClassHistory>[] = [
   { id: "date", header: "Date", accessor: "date" },
   { id: "bookingStatus", header: "Booking Status", accessor: "bookingStatus" },
   { id: "paymentType", header: "Payment Type", accessor: "paymentType" },
-  { id: "checkedInAt", header: "Checked In At", accessor: "checkedInAt", format: "dateTime" },
+  { id: "checkedInAt", header: "Checked In At", accessor: "checkedInAt", render: (row) => formatDateTime(row.checkedInAt) },
 ];
 
 export default function MembersPage() {

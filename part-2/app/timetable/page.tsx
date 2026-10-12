@@ -2,21 +2,23 @@
 
 import { Suspense, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { DataTable, type DataTableColumn, type DataTableSort } from "../components/DataTable";
+import { DataTable } from "../components/data-table/DataTable";
+import type { DataTableColumn, DataTableSort } from "../components/data-table/types";
+import { formatDateTime } from "../lib/formatDateTime";
 import { timetableRepository } from "../../service/timetable/repository";
 import type { ClassPageResult } from "../../service/timetable/interface";
 import type { Attendee, ClassSession } from "../../service/common/schema";
 
 const columns: DataTableColumn<ClassSession>[] = [
-  { id: "name", header: "Class", accessor: "name", width: 190, tabletWidth: 160, mobileWidth: 140, pinned: true },
-  { id: "instructor", header: "Instructor", accessor: "instructor"},
-  { id: "date", header: "Date", accessor: "date" },
-  { id: "time", header: "Time", accessor: "startTime", render: (row) => `${row.startTime} - ${row.endTime}` },
-  { id: "duration", header: "Duration", accessor: "durationMins", render: (row) => `${row.durationMins} min` },
-  { id: "attendeeCount", header: "Attendees", accessor: "attendeeCount" },
-  { id: "capacity", header: "Capacity", accessor: "capacity" },
-  { id: "capacityStatus", header: "Capacity Status", accessor: "capacityStatus", sortable: false },
-  { id: "status", header: "Status", accessor: "status", sortable: false},
+  { id: "name", header: "Class", accessor: "name", width: 190, tabletWidth: 160, mobileWidth: 140, pinned: true, sortable: true },
+  { id: "instructor", header: "Instructor", accessor: "instructor", sortable: true },
+  { id: "date", header: "Date", accessor: "date", sortable: true },
+  { id: "time", header: "Time", accessor: "startTime", render: (row) => `${row.startTime} - ${row.endTime}`, sortable: true },
+  { id: "duration", header: "Duration", accessor: "durationMins", render: (row) => `${row.durationMins} min`, sortable: true },
+  { id: "attendeeCount", header: "Attendees", accessor: "attendeeCount", sortable: true },
+  { id: "capacity", header: "Capacity", accessor: "capacity", sortable: true },
+  { id: "capacityStatus", header: "Capacity Status", accessor: "capacityStatus" },
+  { id: "status", header: "Status", accessor: "status" },
 ];
 
 const expandedColumns: DataTableColumn<Attendee>[] = [
@@ -30,8 +32,8 @@ const expandedColumns: DataTableColumn<Attendee>[] = [
   { id: "paymentType", header: "Payment Type", accessor: "paymentType" },
   { id: "paymentStatus", header: "Payment Status", accessor: "paymentStatus" },
   { id: "bookingSource", header: "Booking Source", accessor: "bookingSource" },
-  { id: "bookedAt", header: "Booked At", accessor: "bookedAt", format: "dateTime" },
-  { id: "checkedInAt", header: "Checked In At", accessor: "checkedInAt", format: "dateTime", width: 200 },
+  { id: "bookedAt", header: "Booked At", accessor: "bookedAt", render: (row) => formatDateTime(row.bookedAt) },
+  { id: "checkedInAt", header: "Checked In At", accessor: "checkedInAt", render: (row) => formatDateTime(row.checkedInAt), width: 200 },
 ];
 
 function positiveInteger(value: string | null, fallback: number) {
@@ -56,7 +58,7 @@ function TimetableTable() {
   const sortId = searchParams.get("sort");
   const sortDirection = searchParams.get("dir");
   const sort = useMemo<DataTableSort>(() => {
-    if (!sortId || (sortDirection !== "asc" && sortDirection !== "desc") || !columns.some((column) => column.id === sortId && column.sortable !== false)) return null;
+    if (!sortId || (sortDirection !== "asc" && sortDirection !== "desc") || !columns.some((column) => column.id === sortId && column.sortable === true)) return null;
     return { columnId: sortId, direction: sortDirection };
   }, [sortId, sortDirection]);
   const [requestState, setRequestState] = useState<{ key: string; result?: ClassPageResult; error?: boolean } | null>(null);

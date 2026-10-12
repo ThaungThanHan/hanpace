@@ -4,8 +4,8 @@ import Sidebar from "./components/Sidebar";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "TimeTable | Han Fitness",
-  description: "Han Fitness class timetable.",
+  title: "Dashboard | Han Fitness",
+  description: "Han Fitness Dashboard.",
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {

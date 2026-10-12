@@ -330,25 +330,40 @@ function getTargetYPercent({
 }
 
 function LogoArtwork() {
+  const textProps = {
+    x: 0,
+    y: 105,
+    fontFamily: "Arial, Helvetica, sans-serif",
+    fontSize: 102,
+    fontWeight: 900,
+    letterSpacing: -8,
+  } as const;
+
   return (
     <svg
       viewBox="0 0 540 150"
       className="block h-full w-full overflow-visible"
       aria-hidden="true"
       focusable="false"
+      style={{ textRendering: "geometricPrecision" }}
     >
       <text
-        x="0"
-        y="105"
+        {...textProps}
+        dx="0"
+        dy="3"
+        fill="none"
+        stroke="rgba(24,60,46,0.12)"
+        strokeWidth="4"
+        paintOrder="stroke fill"
+      >
+        Pace
+      </text>
+      <text
+        {...textProps}
         fill="#fff5d9"
-        fontFamily="Arial, Helvetica, sans-serif"
-        fontSize="102"
-        fontWeight="900"
-        letterSpacing="-8"
         stroke="rgba(40,93,133,0.7)"
         strokeWidth="4"
         paintOrder="stroke fill"
-        style={{ filter: "drop-shadow(0 3px 0 rgba(24,60,46,0.12))" }}
       >
         Pace
       </text>
@@ -507,11 +522,11 @@ function VisualStage({
   return (
     <div
       ref={visualStageRef}
-      className="pointer-events-none absolute inset-0 z-10 overflow-hidden"
+      className="pointer-events-none absolute inset-0 z-40 overflow-hidden"
       aria-hidden="true"
     >
       <div
-        className="absolute left-1/2 top-1/2 bg-[#f6ead7]"
+        className="absolute left-1/2 top-1/2"
         style={{
           aspectRatio: "16 / 9",
           contain: "layout paint",
@@ -1042,9 +1057,11 @@ function LogoSection({ children, onReady }, ref) {
     const ctx = gsap.context(() => {
       gsap.set(artboardLogo, {
         autoAlpha: 0,
+        force3D: false,
+        scale: ARTBOARD_LOGO.targetScale,
         transformOrigin: "center center",
-        xPercent: -50,
-        yPercent: -50,
+        xPercent: artboardLogoTargetXPercent,
+        yPercent: artboardLogoTargetYPercent,
       });
       gsap.set(overlayLogo, {
         autoAlpha: 1,
@@ -1058,6 +1075,7 @@ function LogoSection({ children, onReady }, ref) {
         transformOrigin: "center center",
       });
       gsap.set(featured, {
+        autoAlpha: 1,
         transformOrigin: "center center",
         xPercent: -50,
         yPercent: -50,
@@ -1095,6 +1113,7 @@ function LogoSection({ children, onReady }, ref) {
       timeline.to(
         featured,
         {
+          autoAlpha: 1,
           duration: 0.62,
           rotation: FEATURED_ROTATION,
           scale: FEATURED_TARGET.scale,
@@ -1120,19 +1139,19 @@ function LogoSection({ children, onReady }, ref) {
         overlayLogo,
         {
           autoAlpha: 0,
-          duration: 0.22,
-          y: -12,
+          duration: 0.36,
         },
-        0.32,
+        0.28,
       );
 
       timeline.to(
         artboardLogo,
         {
           autoAlpha: 1,
-          duration: 0.12,
+          duration: 0.42,
+          ease: "power1.out",
         },
-        0.34,
+        0.36,
       );
 
       timeline.to(
@@ -1143,17 +1162,6 @@ function LogoSection({ children, onReady }, ref) {
           ease: "power1.out",
         },
         0.36,
-      );
-
-      timeline.to(
-        artboardLogo,
-        {
-          duration: 0.56,
-          scale: ARTBOARD_LOGO.targetScale,
-          xPercent: artboardLogoTargetXPercent,
-          yPercent: artboardLogoTargetYPercent,
-        },
-        0.38,
       );
 
       timeline.to(
