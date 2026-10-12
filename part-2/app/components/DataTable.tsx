@@ -1,7 +1,8 @@
 "use client";
 
-import { Fragment, useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
-import { ChevronLeft, ChevronRight, ChevronsDown, ChevronsUp, ChevronsUpDown, RotateCcw } from "lucide-react";
+import { Fragment, useEffect, useId, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { createPortal } from "react-dom";
+import { ChevronDown, ChevronLeft, ChevronRight, ChevronsDown, ChevronsUp, ChevronsUpDown, RotateCcw } from "lucide-react";
 
 export interface DataTableColumn<TRow> {
   id: string;
@@ -12,13 +13,13 @@ export interface DataTableColumn<TRow> {
   sortable?: boolean;
   /** Width in pixels. */
   width?: number;
+  mobileWidth?: number;
+  tabletWidth?: number;
+  pinned?: boolean;
 }
 
 type RowId = string | number;
-type Sort = { columnId: string; direction: "asc" | "desc" } | null;
-type Pagination = { page: number; pageSize: number };
-
-export type DataTableExpansionMode = "inline" | "onDemand";
+export type DataTableSort = { columnId: string; direction: "asc" | "desc" } | null;
 
 interface DataTableBaseProps<TRow, TChild> {
   columns: DataTableColumn<TRow>[];
@@ -30,19 +31,35 @@ interface DataTableBaseProps<TRow, TChild> {
   onRetry?: () => void;
   initialPageSize?: number;
   pageSizeOptions?: readonly number[];
-  getRowId?: (row: TRow) => RowId;
-  sort?: Sort;
-  onSortChange?: (sort: Sort) => void;
   renderExpanded?: (row: TRow, children: readonly TChild[]) => ReactNode;
 }
 
-export type DataTableProps<TRow, TChild> = DataTableBaseProps<TRow, TChild> & (
-  | { pagination?: undefined; onPaginationChange?: never }
-  | { pagination: Pagination; onPaginationChange: (pagination: Pagination) => void }
-) & (
-  | { expansion?: undefined; getChildren?: never; loadChildren?: never }
-  | { expansion: "inline"; getChildren: (row: TRow) => readonly TChild[]; loadChildren?: never }
-  | { expansion: "onDemand"; getChildren?: never; loadChildren: (row: TRow) => Promise<readonly TChild[]> }
+type DataTableSortingProps =
+  | { manualSorting?: false; sort?: DataTableSort; onSortChange?: (sort: DataTableSort) => void }
+  | { manualSorting: true; sort: DataTableSort; onSortChange: (sort: DataTableSort) => void };
+
+type DataTablePaginationProps =
+  | {
+      manualPagination?: false;
+      totalCount?: never;
+      page?: number;
+      pageSize?: number;
+      onPageChange?: (page: number) => void;
+      onPageSizeChange?: (pageSize: number) => void;
+    }
+  | {
+      manualPagination: true;
+      totalCount: number;
+      page: number;
+      pageSize: number;
+      onPageChange: (page: number) => void;
+      onPageSizeChange: (pageSize: number) => void;
+    };
+
+export type DataTableProps<TRow, TChild> = DataTableBaseProps<TRow, TChild> & DataTableSortingProps & DataTablePaginationProps & (
+  | { expansion?: undefined; getRowId?: (row: TRow) => RowId; getChildren?: never; loadChildren?: never }
+  | { expansion: "inline"; getRowId: (row: TRow) => RowId; getChildren: (row: TRow) => readonly TChild[]; loadChildren?: never }
+  | { expansion: "onDemand"; getRowId: (row: TRow) => RowId; getChildren?: never; loadChildren: (row: TRow) => Promise<readonly TChild[]> }
 );
 
 type ChildState<TChild> =
@@ -72,9 +89,133 @@ function renderCell<TRow>(column: DataTableColumn<TRow>, row: TRow): ReactNode {
 
 const skeletonWidths = ["w-3/4", "w-2/3", "w-1/2"];
 const defaultPageSizeOptions = [10, 25, 50];
+const sortCollator = new Intl.Collator(undefined, { numeric: true, sensitivity: "base" });
 const pinnedDivider = "after:pointer-events-none after:absolute after:inset-y-0 after:right-0 after:w-px after:bg-[#c5d7ca] after:content-[''] after:transition-opacity after:duration-150";
 const pinnedEdgeVisible = "after:opacity-100 shadow-[3px_0_8px_-5px_rgba(31,78,53,0.18)]";
 const pinnedEdgeHidden = "after:opacity-0";
+const responsiveTableWidth = "min-w-[var(--table-width-mobile)] md:min-w-[var(--table-width-tablet)] lg:min-w-[var(--table-width-desktop)]";
+const responsiveColumnWidth = "w-[var(--column-width-mobile)] md:w-[var(--column-width-tablet)] lg:w-[var(--column-width-desktop)]";
+
+function PageSizePicker({ value, options, onChange }: { value: number; options: readonly number[]; onChange: (value: number) => void }) {
+  const [menuPosition, setMenuPosition] = useState<{ top: number; left: number; width: number } | null>(null);
+  const buttonRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const menuId = useId();
+
+  useEffect(() => {
+    if (!menuPosition) return;
+    menuRef.current?.querySelector<HTMLButtonElement>('[aria-current="true"]')?.focus();
+
+    const closeOnOutsideClick = (event: PointerEvent) => {
+      const target = event.target as Node;
+      if (!buttonRef.current?.contains(target) && !menuRef.current?.contains(target)) setMenuPosition(null);
+    };
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setMenuPosition(null);
+        buttonRef.current?.focus();
+      }
+    };
+    const closeOnViewportChange = () => setMenuPosition(null);
+    document.addEventListener("pointerdown", closeOnOutsideClick);
+    document.addEventListener("keydown", closeOnEscape);
+    window.addEventListener("scroll", closeOnViewportChange, true);
+    window.addEventListener("resize", closeOnViewportChange);
+    return () => {
+      document.removeEventListener("pointerdown", closeOnOutsideClick);
+      document.removeEventListener("keydown", closeOnEscape);
+      window.removeEventListener("scroll", closeOnViewportChange, true);
+      window.removeEventListener("resize", closeOnViewportChange);
+    };
+  }, [menuPosition]);
+
+  function toggleMenu() {
+    if (menuPosition) {
+      setMenuPosition(null);
+      return;
+    }
+    const rect = buttonRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    const menuHeight = Math.min(options.length * 32 + 8, window.innerHeight - 16);
+    const top = rect.top >= menuHeight + 8 ? rect.top - menuHeight - 4 : rect.bottom + 4;
+    setMenuPosition({ top, left: Math.min(rect.left, window.innerWidth - Math.max(rect.width, 56) - 8), width: Math.max(rect.width, 56) });
+  }
+
+  return (
+    <div className="flex items-center gap-2">
+      <span>Rows per page</span>
+      <button
+        ref={buttonRef}
+        type="button"
+        aria-label={`Rows per page: ${value}`}
+        aria-expanded={Boolean(menuPosition)}
+        aria-controls={menuId}
+        onClick={toggleMenu}
+        className="inline-flex h-8 min-w-14 cursor-pointer items-center justify-between gap-2 rounded border border-[#cfded3] bg-white px-2 text-[#284638] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#2b8a58]"
+      >
+        {value}<ChevronDown aria-hidden="true" className="size-4" />
+      </button>
+      {menuPosition && createPortal(
+        <div
+          ref={menuRef}
+          id={menuId}
+          role="group"
+          aria-label="Rows per page options"
+          className="fixed z-50 max-h-[calc(100dvh-16px)] overflow-y-auto rounded border border-[#cfded3] bg-white p-1 shadow-md"
+          style={menuPosition}
+        >
+          {options.map((size) => (
+            <button
+              key={size}
+              type="button"
+              aria-current={size === value ? "true" : undefined}
+              onClick={() => {
+                setMenuPosition(null);
+                buttonRef.current?.focus();
+                onChange(size);
+              }}
+              className="block h-8 w-full cursor-pointer rounded px-2 text-left text-[#284638] hover:bg-[#edf5ef] aria-current:bg-[#e1efe5] focus-visible:outline-2 focus-visible:outline-[#2b8a58]"
+            >
+              {size}
+            </button>
+          ))}
+        </div>,
+        document.body,
+      )}
+    </div>
+  );
+}
+
+type ColumnWidths = { mobile: number; tablet: number; desktop: number };
+
+function getColumnWidths<TRow>(columns: DataTableColumn<TRow>[], pinnedColumnId: string | undefined, pinnedDefault: number, defaultWidth: number): ColumnWidths[] {
+  return columns.map((column) => {
+    const desktop = column.width ?? (column.id === pinnedColumnId ? pinnedDefault : defaultWidth);
+    const tablet = column.tabletWidth ?? desktop;
+    return { mobile: column.mobileWidth ?? tablet, tablet, desktop };
+  });
+}
+
+function getFlexibleColumnIndex<TRow>(columns: DataTableColumn<TRow>[], pinnedColumnId: string | undefined): number {
+  return columns.reduce((last, column, index) =>
+    column.id !== pinnedColumnId && column.width === undefined && column.tabletWidth === undefined && column.mobileWidth === undefined ? index : last, -1);
+}
+
+function tableWidthStyle(widths: ColumnWidths[], minimum: number): CSSProperties {
+  return {
+    "--table-width-mobile": `${Math.max(minimum, widths.reduce((sum, width) => sum + width.mobile, 0))}px`,
+    "--table-width-tablet": `${Math.max(minimum, widths.reduce((sum, width) => sum + width.tablet, 0))}px`,
+    "--table-width-desktop": `${Math.max(minimum, widths.reduce((sum, width) => sum + width.desktop, 0))}px`,
+  } as CSSProperties;
+}
+
+function columnWidthStyle(width: ColumnWidths): CSSProperties {
+  return {
+    "--column-width-mobile": `${width.mobile}px`,
+    "--column-width-tablet": `${width.tablet}px`,
+    "--column-width-desktop": `${width.desktop}px`,
+  } as CSSProperties;
+}
 
 function SkeletonLine({ widthClass }: { widthClass: string }) {
   return <span aria-hidden="true" className={`block h-3 ${widthClass} rounded-sm bg-[#e1ebe4] animate-pulse motion-reduce:animate-none`} />;
@@ -82,18 +223,27 @@ function SkeletonLine({ widthClass }: { widthClass: string }) {
 
 function ExpandedColumnsTable<TChild>({ columns, rows }: { columns: DataTableColumn<TChild>[]; rows: readonly TChild[] | null }) {
   const [isScrolled, setIsScrolled] = useState(false);
+  const scrolledRef = useRef(false);
   const pinnedEdge = isScrolled ? pinnedEdgeVisible : pinnedEdgeHidden;
-  const columnWidths = columns.map((column, index) => column.width ?? (index === 0 ? 160 : 170));
+  const pinnedColumnId = columns.find((column) => column.pinned)?.id;
+  const columnWidths = getColumnWidths(columns, pinnedColumnId, 160, 170);
+  const flexibleColumnIndex = getFlexibleColumnIndex(columns, pinnedColumnId);
 
   return (
-    <div className="overflow-x-auto" onScroll={(event) => setIsScrolled(event.currentTarget.scrollLeft > 0)}>
+    <div className="overflow-x-auto" onScroll={(event) => {
+      const nextScrolled = event.currentTarget.scrollLeft > 0;
+      if (nextScrolled !== scrolledRef.current) {
+        scrolledRef.current = nextScrolled;
+        setIsScrolled(nextScrolled);
+      }
+    }}>
       {rows === null && <span role="status" className="sr-only">Loading details...</span>}
-      <table aria-busy={rows === null} className="w-full table-fixed border-collapse text-left text-[13px] leading-5 break-words" style={{ minWidth: Math.max(480, columnWidths.reduce((sum, width) => sum + width, 0)) }}>
-        <colgroup>{columns.map((column, index) => <col key={column.id} style={{ width: columnWidths[index] }} />)}</colgroup>
+      <table aria-busy={rows === null} className={`${flexibleColumnIndex >= 0 ? "w-full" : "w-max"} table-fixed border-collapse text-left text-[13px] leading-5 break-words ${responsiveTableWidth}`} style={tableWidthStyle(columnWidths, 480)}>
+        <colgroup>{columns.map((column, index) => <col key={column.id} className={index === flexibleColumnIndex ? undefined : responsiveColumnWidth} style={index === flexibleColumnIndex ? undefined : columnWidthStyle(columnWidths[index])} />)}</colgroup>
         <thead className="text-[#416352]">
           <tr>
-            {columns.map((column, columnIndex) => (
-              <th key={column.id} scope="col" className={`px-3 pb-2 font-semibold ${columnIndex === 0 ? `sticky left-0 z-20 bg-[#f4f9f5] ${pinnedDivider} ${pinnedEdge}` : ""}`}>{column.header}</th>
+            {columns.map((column) => (
+              <th key={column.id} scope="col" className={`px-3 pb-2 font-semibold ${column.id === pinnedColumnId ? `sticky left-0 z-20 bg-[#f4f9f5] ${pinnedDivider} ${pinnedEdge}` : ""}`}>{column.header}</th>
             ))}
           </tr>
         </thead>
@@ -102,7 +252,7 @@ function ExpandedColumnsTable<TChild>({ columns, rows }: { columns: DataTableCol
             ? Array.from({ length: 3 }, (_, rowIndex) => (
                 <tr key={rowIndex} aria-hidden="true">
                   {columns.map((column, columnIndex) => (
-                    <td key={column.id} className={`px-3 py-2 ${columnIndex === 0 ? `sticky left-0 z-10 bg-[#f4f9f5] ${pinnedDivider} ${pinnedEdge}` : ""}`}>
+                    <td key={column.id} className={`px-3 py-2 ${column.id === pinnedColumnId ? `sticky left-0 z-10 bg-[#f4f9f5] ${pinnedDivider} ${pinnedEdge}` : ""}`}>
                       <div className="flex h-5 items-center">
                         <SkeletonLine widthClass={skeletonWidths[(rowIndex + columnIndex) % skeletonWidths.length]} />
                       </div>
@@ -112,8 +262,8 @@ function ExpandedColumnsTable<TChild>({ columns, rows }: { columns: DataTableCol
               ))
             : rows.map((child, index) => (
                 <tr key={index}>
-                  {columns.map((column, columnIndex) => (
-                    <td key={column.id} className={`px-3 py-2 text-[#385b48] ${columnIndex === 0 ? `sticky left-0 z-10 bg-[#f4f9f5] ${pinnedDivider} ${pinnedEdge}` : ""}`}>{renderCell(column, child)}</td>
+                  {columns.map((column) => (
+                    <td key={column.id} className={`px-3 py-2 text-[#385b48] ${column.id === pinnedColumnId ? `sticky left-0 z-10 bg-[#f4f9f5] ${pinnedDivider} ${pinnedEdge}` : ""}`}>{renderCell(column, child)}</td>
                   ))}
                 </tr>
               ))}
@@ -163,22 +313,27 @@ export function DataTable<TRow, TChild = never>(props: DataTableProps<TRow, TChi
     expansion,
     sort: controlledSort,
     onSortChange,
+    manualSorting = false,
   } = props;
-  const [localSort, setLocalSort] = useState<Sort>(null);
+  const [localSort, setLocalSort] = useState<DataTableSort>(null);
   const [pageIndex, setPageIndex] = useState(0);
   const [localPageSize, setPageSize] = useState(() => Number.isInteger(initialPageSize) && initialPageSize > 0 ? initialPageSize : 10);
   const [expandedIds, setExpandedIds] = useState<Set<RowId>>(() => new Set());
   const [openedIds, setOpenedIds] = useState<Set<RowId>>(() => new Set());
   const [childStates, setChildStates] = useState<Map<RowId, ChildState<TChild>>>(() => new Map());
   const [isScrolled, setIsScrolled] = useState(false);
+  const scrolledRef = useRef(false);
   const [viewportWidth, setViewportWidth] = useState<number | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const tableId = useId();
-  const sort = controlledSort === undefined ? localSort : controlledSort;
+  const requestedSort = controlledSort === undefined ? localSort : controlledSort;
+  const sort = requestedSort && columns.some((column) => column.id === requestedSort.columnId && column.sortable !== false) ? requestedSort : null;
   const isLoading = loading && !error;
-  const pageSize = props.pagination?.pageSize ?? localPageSize;
+  const pageSize = props.pageSize !== undefined && Number.isInteger(props.pageSize) && props.pageSize > 0 ? props.pageSize : localPageSize;
   const pinnedEdge = isScrolled ? pinnedEdgeVisible : pinnedEdgeHidden;
-  const columnWidths = columns.map((column, index) => column.width ?? (index === 0 ? 190 : 150));
+  const pinnedColumnId = columns.find((column) => column.pinned)?.id;
+  const columnWidths = getColumnWidths(columns, pinnedColumnId, 190, 150);
+  const flexibleColumnIndex = getFlexibleColumnIndex(columns, pinnedColumnId);
   const sizeOptions = [...new Set([initialPageSize, pageSize, ...pageSizeOptions].filter((size) => Number.isInteger(size) && size > 0))].sort((a, b) => a - b);
 
   useEffect(() => {
@@ -194,44 +349,53 @@ export function DataTable<TRow, TChild = never>(props: DataTableProps<TRow, TChi
 
   const sortedRows = useMemo(() => {
     const indexedRows = rows.map((row, index) => ({ row, index }));
+    if (manualSorting) return indexedRows;
     const column = columns.find((item) => item.id === sort?.columnId && item.sortable !== false);
     if (!column || !sort) return indexedRows;
 
-    return indexedRows.sort((a, b) => {
-      const aValue = typeof column.accessor === "function" ? column.accessor(a.row) : a.row[column.accessor];
-      const bValue = typeof column.accessor === "function" ? column.accessor(b.row) : b.row[column.accessor];
-      const result = String(aValue ?? "").localeCompare(String(bValue ?? ""), undefined, {
-        numeric: true,
-        sensitivity: "base",
-      });
+    const keyedRows = indexedRows.map(({ row, index }) => ({
+      row,
+      index,
+      sortValue: String((typeof column.accessor === "function" ? column.accessor(row) : row[column.accessor]) ?? ""),
+    }));
+    return keyedRows.sort((a, b) => {
+      const result = sortCollator.compare(a.sortValue, b.sortValue);
       return (sort.direction === "asc" ? result : -result) || a.index - b.index;
     });
-  }, [columns, rows, sort]);
-  const pageCount = Math.max(1, Math.ceil(sortedRows.length / pageSize));
-  const requestedPageIndex = props.pagination ? props.pagination.page - 1 : pageIndex;
-  const currentPage = Math.max(0, Math.min(requestedPageIndex, pageCount - 1));
-  const pagedRows = sortedRows.slice(currentPage * pageSize, (currentPage + 1) * pageSize);
-  const rangeStart = sortedRows.length === 0 ? 0 : currentPage * pageSize + 1;
-  const rangeEnd = Math.min((currentPage + 1) * pageSize, sortedRows.length);
+  }, [columns, rows, sort, manualSorting]);
+  const totalRows = props.manualPagination ? props.totalCount : sortedRows.length;
+  const pageCount = Math.max(1, Math.ceil(totalRows / pageSize));
+  const requestedPage = props.page ?? pageIndex + 1;
+  const currentPage = Number.isInteger(requestedPage) ? Math.max(1, Math.min(requestedPage, pageCount)) : 1;
+  const pagedRows = props.manualPagination ? sortedRows : sortedRows.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+  const rangeStart = pagedRows.length === 0 ? 0 : (currentPage - 1) * pageSize + 1;
+  const rangeEnd = pagedRows.length === 0 ? 0 : Math.min((currentPage - 1) * pageSize + pagedRows.length, totalRows);
 
-  function changePagination(page: number, nextPageSize: number) {
-    if (props.pagination) props.onPaginationChange({ page, pageSize: nextPageSize });
-    else {
-      setPageIndex(page - 1);
-      setPageSize(nextPageSize);
-    }
+  function changePage(nextPage: number) {
+    if (props.page === undefined) setPageIndex(nextPage - 1);
+    props.onPageChange?.(nextPage);
+  }
+
+  function resetPage() {
+    changePage(1);
+  }
+
+  function changePageSize(nextPageSize: number) {
+    if (props.pageSize === undefined) setPageSize(nextPageSize);
+    props.onPageSizeChange?.(nextPageSize);
+    resetPage();
   }
 
   function changeSort(columnId: string) {
     if (!columns.some((column) => column.id === columnId && column.sortable !== false)) return;
-    if (currentPage !== 0) changePagination(1, pageSize);
-    const nextSort: Sort = sort?.columnId !== columnId
+    const nextSort: DataTableSort = sort?.columnId !== columnId
       ? { columnId, direction: "asc" }
       : sort.direction === "asc"
         ? { columnId, direction: "desc" }
         : null;
-    if (onSortChange) onSortChange(nextSort);
-    else setLocalSort(nextSort);
+    if (controlledSort === undefined) setLocalSort(nextSort);
+    onSortChange?.(nextSort);
+    resetPage();
   }
 
   async function loadRow(row: TRow, id: RowId) {
@@ -300,22 +464,31 @@ export function DataTable<TRow, TChild = never>(props: DataTableProps<TRow, TChi
 
   return (
     <div className="mt-6 w-full overflow-hidden rounded-md border border-[#dce8df] bg-white">
-      <div ref={scrollRef} className="w-full overflow-x-auto" onScroll={(event) => setIsScrolled(event.currentTarget.scrollLeft > 0)}>
+      <div ref={scrollRef} className="w-full overflow-x-auto" onScroll={(event) => {
+        const nextScrolled = event.currentTarget.scrollLeft > 0;
+        if (nextScrolled !== scrolledRef.current) {
+          scrolledRef.current = nextScrolled;
+          setIsScrolled(nextScrolled);
+        }
+      }}>
       {isLoading && <span role="status" className="sr-only">Loading rows...</span>}
-      <table aria-busy={Boolean(isLoading)} className="w-full table-fixed border-collapse text-left text-sm break-words" style={{ minWidth: Math.max(680, columnWidths.reduce((sum, width) => sum + width, 0)) }}>
-        <colgroup>{columns.map((column, index) => <col key={column.id} style={{ width: columnWidths[index] }} />)}</colgroup>
+      <table aria-busy={Boolean(isLoading)} className={`${flexibleColumnIndex >= 0 ? "w-full" : "w-max"} table-fixed border-collapse text-left text-sm break-words ${responsiveTableWidth}`} style={tableWidthStyle(columnWidths, 680)}>
+        <colgroup>{columns.map((column, index) => <col key={column.id} className={index === flexibleColumnIndex ? undefined : responsiveColumnWidth} style={index === flexibleColumnIndex ? undefined : columnWidthStyle(columnWidths[index])} />)}</colgroup>
         <thead className="bg-[#f2f8f3] text-[#416352]">
           <tr>
-            {columns.map((column, columnIndex) => {
+            {columns.map((column) => {
               const sortable = column.sortable !== false;
+              const direction = sort?.columnId === column.id ? sort.direction : null;
               return (
-                <th key={column.id} scope="col" aria-sort={sortable ? (sort?.columnId === column.id ? (sort.direction === "asc" ? "ascending" : "descending") : "none") : undefined} className={`px-5 py-4 font-semibold ${columnIndex === 0 ? `sticky left-0 z-20 bg-[#f2f8f3] ${pinnedDivider} ${pinnedEdge}` : ""}`}>
+                <th key={column.id} scope="col" aria-sort={sortable ? (direction === "asc" ? "ascending" : direction === "desc" ? "descending" : "none") : undefined} className={`py-4 font-semibold ${column.id === pinnedColumnId ? `sticky left-0 z-20 bg-[#f2f8f3] px-3 md:px-5 ${pinnedDivider} ${pinnedEdge}` : "px-5"}`}>
                   {sortable ? (
-                    <button type="button" disabled={loading || Boolean(error)} onClick={() => changeSort(column.id)} className="inline-flex items-center gap-2 hover:text-[#174b38] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#2b8a58]">
+                    <button type="button" disabled={loading || Boolean(error)} onClick={() => changeSort(column.id)} className={`inline-flex cursor-pointer items-center gap-2 transition-colors duration-150 motion-reduce:transition-none hover:text-[#174b38] disabled:cursor-not-allowed focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#2b8a58] ${direction ? "text-[#174b38]" : ""}`}>
                       {column.header}
-                      {sort?.columnId === column.id
-                        ? sort.direction === "asc" ? <ChevronsUp className="size-4" /> : <ChevronsDown className="size-4" />
-                        : <ChevronsUpDown className="size-4 text-[#779584]" />}
+                      <span aria-hidden="true" className="relative block size-4 shrink-0">
+                        <ChevronsUpDown className={`absolute inset-0 size-4 text-[#779584] transition-[opacity,transform] duration-150 motion-reduce:transition-none ${direction === null ? "scale-100 opacity-100" : "scale-75 opacity-0"}`} />
+                        <ChevronsUp className={`absolute inset-0 size-4 transition-[opacity,transform] duration-150 motion-reduce:transition-none ${direction === "asc" ? "scale-100 opacity-100" : "scale-75 opacity-0"}`} />
+                        <ChevronsDown className={`absolute inset-0 size-4 transition-[opacity,transform] duration-150 motion-reduce:transition-none ${direction === "desc" ? "scale-100 opacity-100" : "scale-75 opacity-0"}`} />
+                      </span>
                     </button>
                   ) : column.header}
                 </th>
@@ -327,7 +500,7 @@ export function DataTable<TRow, TChild = never>(props: DataTableProps<TRow, TChi
           {isLoading && Array.from({ length: Math.min(pageSize, 4) }, (_, rowIndex) => (
             <tr key={rowIndex} aria-hidden="true" className="border-t border-[#e7eee9]">
               {columns.map((column, columnIndex) => (
-                <td key={column.id} className={`px-5 py-4 ${columnIndex === 0 ? `sticky left-0 z-10 bg-white ${pinnedDivider} ${pinnedEdge}` : ""}`}>
+                <td key={column.id} className={`py-4 ${column.id === pinnedColumnId ? `sticky left-0 z-10 bg-white px-3 md:px-5 ${pinnedDivider} ${pinnedEdge}` : "px-5"}`}>
                   <div className="flex h-5 items-center gap-2">
                     {expansion && columnIndex === 0 && <span className="size-4 shrink-0 rounded-sm bg-[#e1ebe4] animate-pulse motion-reduce:animate-none" />}
                     <SkeletonLine widthClass={skeletonWidths[(rowIndex + columnIndex) % skeletonWidths.length]} />
@@ -337,7 +510,7 @@ export function DataTable<TRow, TChild = never>(props: DataTableProps<TRow, TChi
             </tr>
           ))}
           {!loading && !error && pagedRows.map(({ row, index }) => {
-            const id = getRowId ? getRowId(row) : index;
+            const id = props.expansion ? props.getRowId(row) : getRowId?.(row) ?? index;
             const expanded = expandedIds.has(id);
             const panelId = `${tableId}-expanded-${index}`;
             return (
@@ -345,7 +518,8 @@ export function DataTable<TRow, TChild = never>(props: DataTableProps<TRow, TChi
                 <tr
                   onClick={expansion ? () => toggleRow(row, id) : undefined}
                   onKeyDown={expansion ? (event) => {
-                    if (event.target === event.currentTarget && (event.key === "Enter" || event.key === " ")) {
+                    if (event.target !== event.currentTarget) return;
+                    if (event.key === "Enter" || event.key === " " || (event.key === "ArrowDown" && !expanded) || (event.key === "ArrowUp" && expanded)) {
                       event.preventDefault();
                       toggleRow(row, id);
                     }
@@ -357,9 +531,9 @@ export function DataTable<TRow, TChild = never>(props: DataTableProps<TRow, TChi
                 >
                   {columns.map((column, columnIndex) => {
                     return (
-                      <td key={column.id} className={`px-5 py-4 text-[#284638] transition-colors duration-150 group-hover/row:bg-[#f8fbf8] ${columnIndex === 0 ? `sticky left-0 z-10 bg-white ${pinnedDivider} ${pinnedEdge}` : ""}`}>
+                      <td key={column.id} className={`py-4 text-[#284638] transition-colors duration-150 group-hover/row:bg-[#f8fbf8] ${column.id === pinnedColumnId ? `sticky left-0 z-10 bg-white px-3 md:px-5 ${pinnedDivider} ${pinnedEdge}` : "px-5"}`}>
                         <span className="inline-flex items-center gap-2">
-                          {expansion && columnIndex === 0 && <ChevronRight aria-hidden="true" className={`size-4 shrink-0 text-[#488967] transition-transform duration-[360ms] ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none ${expanded ? "rotate-90" : ""}`} />}
+                          {expansion && columnIndex === 0 && <ChevronDown aria-hidden="true" className={`size-4 shrink-0 text-[#488967] transition-transform duration-[360ms] ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none ${expanded ? "rotate-180" : ""}`} />}
                           {renderCell(column, row)}
                         </span>
                       </td>
@@ -403,24 +577,14 @@ export function DataTable<TRow, TChild = never>(props: DataTableProps<TRow, TChi
       </div>
       {!loading && !error && (
         <div className="flex min-h-14 flex-wrap items-center justify-between gap-x-6 gap-y-2 border-t border-[#e7eee9] bg-[#fbfdfb] px-4 py-2 text-xs text-[#416352] sm:px-5">
-          <div className="flex items-center gap-2">
-            <label htmlFor={`${tableId}-page-size`}>Rows per page</label>
-            <select
-              id={`${tableId}-page-size`}
-              value={pageSize}
-              onChange={(event) => changePagination(1, Number(event.target.value))}
-              className="h-8 min-w-14 rounded border border-[#cfded3] bg-white px-2 text-[#284638] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#2b8a58]"
-            >
-              {sizeOptions.map((size) => <option key={size} value={size}>{size}</option>)}
-            </select>
-          </div>
+          <PageSizePicker value={pageSize} options={sizeOptions} onChange={changePageSize} />
           <div className="flex items-center gap-3">
-            <span aria-live="polite" className="whitespace-nowrap">{sortedRows.length === 0 ? "0 of 0" : `${rangeStart}-${rangeEnd} of ${sortedRows.length}`}</span>
+            <span aria-live="polite" className="whitespace-nowrap">{totalRows === 0 ? "0 of 0" : `${rangeStart}-${rangeEnd} of ${totalRows}`}</span>
             <nav aria-label="Table pages" className="flex items-center gap-1">
-              <button type="button" title="Previous page" aria-label="Previous page" disabled={currentPage === 0} onClick={() => changePagination(currentPage, pageSize)} className="inline-flex size-8 items-center justify-center rounded border border-[#dce8df] text-[#416352] hover:bg-[#edf5ef] disabled:cursor-not-allowed disabled:opacity-40 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#2b8a58]">
+              <button type="button" title="Previous page" aria-label="Previous page" disabled={currentPage === 1} onClick={() => changePage(currentPage - 1)} className="inline-flex size-8 items-center justify-center rounded border border-[#dce8df] text-[#416352] hover:bg-[#edf5ef] disabled:cursor-not-allowed disabled:opacity-40 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#2b8a58]">
                 <ChevronLeft className="size-4" />
               </button>
-              <button type="button" title="Next page" aria-label="Next page" disabled={currentPage >= pageCount - 1} onClick={() => changePagination(currentPage + 2, pageSize)} className="inline-flex size-8 items-center justify-center rounded border border-[#dce8df] text-[#416352] hover:bg-[#edf5ef] disabled:cursor-not-allowed disabled:opacity-40 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#2b8a58]">
+              <button type="button" title="Next page" aria-label="Next page" disabled={currentPage >= pageCount} onClick={() => changePage(currentPage + 1)} className="inline-flex size-8 items-center justify-center rounded border border-[#dce8df] text-[#416352] hover:bg-[#edf5ef] disabled:cursor-not-allowed disabled:opacity-40 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#2b8a58]">
                 <ChevronRight className="size-4" />
               </button>
             </nav>

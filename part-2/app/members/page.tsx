@@ -7,7 +7,7 @@ import type { MemberWithClassHistory } from "../../service/members/interface";
 import { membersRepository } from "../../service/members/repository";
 
 const columns: DataTableColumn<MemberWithClassHistory>[] = [
-  { id: "name", header: "Name", accessor: "name" },
+  { id: "name", header: "Name", accessor: "name", width: 190, tabletWidth: 160, mobileWidth: 140, pinned: true },
   { id: "id", header: "Member ID", accessor: "id" },
   { id: "email", header: "Email", accessor: "email" },
   { id: "birthday", header: "Birthday", accessor: "birthday" },
@@ -17,7 +17,7 @@ const columns: DataTableColumn<MemberWithClassHistory>[] = [
 ];
 
 const expandedColumns: DataTableColumn<MemberClassHistory>[] = [
-  { id: "className", header: "Class Name", accessor: "className" },
+  { id: "className", header: "Class Name", accessor: "className", width: 190, tabletWidth: 160, mobileWidth: 140, pinned: true },
   { id: "date", header: "Date", accessor: "date" },
   { id: "bookingStatus", header: "Booking Status", accessor: "bookingStatus" },
   { id: "paymentType", header: "Payment Type", accessor: "paymentType" },
@@ -53,6 +53,8 @@ export default function MembersPage() {
         loading={members === null}
         error={loadError ? "Could not load members." : null}
         onRetry={retryLoading}
+        initialPageSize={2}
+        pageSizeOptions={[2, 5, 10]}
         getRowId={(member) => member.id}
         expandedColumns={expandedColumns}
         expandedLabel="Class History"

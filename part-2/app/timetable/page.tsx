@@ -1,14 +1,15 @@
 "use client";
 
-import { Suspense, useEffect, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { DataTable, type DataTableColumn } from "../components/DataTable";
+import { DataTable, type DataTableColumn, type DataTableSort } from "../components/DataTable";
 import { timetableRepository } from "../../service/timetable/repository";
+import type { ClassPageResult } from "../../service/timetable/interface";
 import type { Attendee, ClassSession } from "../../service/common/schema";
 
 const columns: DataTableColumn<ClassSession>[] = [
-  { id: "name", header: "Class", accessor: "name", width: 220 },
-  { id: "instructor", header: "Instructor", accessor: "instructor" },
+  { id: "name", header: "Class", accessor: "name", width: 190, tabletWidth: 160, mobileWidth: 140, pinned: true },
+  { id: "instructor", header: "Instructor", accessor: "instructor"},
   { id: "date", header: "Date", accessor: "date" },
   { id: "time", header: "Time", accessor: "startTime", render: (row) => `${row.startTime} - ${row.endTime}` },
   { id: "duration", header: "Duration", accessor: "durationMins", render: (row) => `${row.durationMins} min` },
@@ -19,12 +20,12 @@ const columns: DataTableColumn<ClassSession>[] = [
 ];
 
 const expandedColumns: DataTableColumn<Attendee>[] = [
-  { id: "name", header: "Name", accessor: (row) => row.identity.name, width: 200 },
+  { id: "name", header: "Name", accessor: (row) => row.identity.name, width: 190, tabletWidth: 160, mobileWidth: 140, pinned: true },
   { id: "bookingStatus", header: "Booking Status", accessor: "bookingStatus" },
   {
     id: "identity",
     header: "Member ID",
-    accessor: (row) => row.identity.type === "member" ? `${row.identity.memberId}` : "Guest",
+    accessor: (row) => row.identity.type === "member" ? `${row.identity.memberId}` : "Guest"
   },
   { id: "paymentType", header: "Payment Type", accessor: "paymentType" },
   { id: "paymentStatus", header: "Payment Status", accessor: "paymentStatus" },
@@ -39,31 +40,79 @@ function positiveInteger(value: string | null, fallback: number) {
   return Number.isSafeInteger(number) ? number : fallback;
 }
 
-function TimetableTable({ rows, error, onRetry }: { rows: ClassSession[] | null; error: boolean; onRetry: () => void }) {
+function updateSearchParams(change: (params: URLSearchParams) => void) {
+  const params = new URLSearchParams(window.location.search);
+  change(params);
+  const query = params.toString();
+  const nextUrl = `${window.location.pathname}${query ? `?${query}` : ""}${window.location.hash}`;
+  const currentUrl = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+  if (nextUrl !== currentUrl) window.history.pushState(null, "", nextUrl);
+}
+
+function TimetableTable() {
   const searchParams = useSearchParams();
   const page = positiveInteger(searchParams.get("page"), 1);
   const pageSize = positiveInteger(searchParams.get("limit"), 2);
+  const sortId = searchParams.get("sort");
+  const sortDirection = searchParams.get("dir");
+  const sort = useMemo<DataTableSort>(() => {
+    if (!sortId || (sortDirection !== "asc" && sortDirection !== "desc") || !columns.some((column) => column.id === sortId && column.sortable !== false)) return null;
+    return { columnId: sortId, direction: sortDirection };
+  }, [sortId, sortDirection]);
+  const [requestState, setRequestState] = useState<{ key: string; result?: ClassPageResult; error?: boolean } | null>(null);
+  const [loadAttempt, setLoadAttempt] = useState(0);
+  const requestKey = `${page}:${pageSize}:${sort?.columnId ?? ""}:${sort?.direction ?? ""}:${loadAttempt}`;
+  const currentState = requestState?.key === requestKey ? requestState : null;
 
-  function updatePagination(next: { page: number; pageSize: number }) {
-    const params = new URLSearchParams(searchParams.toString());
-    params.set("page", String(next.page));
-    params.set("limit", String(next.pageSize));
-    window.history.pushState(null, "", `${window.location.pathname}?${params.toString()}${window.location.hash}`);
-  }
+  useEffect(() => {
+    let active = true;
+    timetableRepository.getClasses({ page, pageSize, sort }).then(
+      (result) => {
+        if (!active) return;
+        const lastPage = Math.max(1, Math.ceil(result.totalCount / pageSize));
+        if (page > lastPage) {
+          updateSearchParams((params) => params.set("page", String(lastPage)));
+          return;
+        }
+        setRequestState({ key: requestKey, result });
+      },
+      () => { if (active) setRequestState({ key: requestKey, error: true }); },
+    );
+    return () => { active = false; };
+  }, [page, pageSize, sort, requestKey]);
 
   return (
     <DataTable<ClassSession, Attendee>
       columns={columns}
       expandedColumns={expandedColumns}
       expandedLabel="Attendees"
-      rows={rows ?? []}
-      loading={rows === null}
-      error={error ? "Could not load classes." : null}
-      onRetry={onRetry}
+      rows={currentState?.result?.rows ?? []}
+      loading={currentState === null}
+      error={currentState?.error ? "Could not load classes." : null}
+      onRetry={() => setLoadAttempt((attempt) => attempt + 1)}
       initialPageSize={2}
       pageSizeOptions={[2, 5, 10]}
-      pagination={{ page, pageSize }}
-      onPaginationChange={updatePagination}
+      sort={sort}
+      onSortChange={(nextSort) => updateSearchParams((params) => {
+        if (nextSort) {
+          params.set("sort", nextSort.columnId);
+          params.set("dir", nextSort.direction);
+        } else {
+          params.delete("sort");
+          params.delete("dir");
+        }
+        params.set("page", "1");
+      })}
+      manualSorting
+      page={page}
+      pageSize={pageSize}
+      totalCount={currentState?.result?.totalCount ?? 0}
+      onPageChange={(nextPage) => updateSearchParams((params) => params.set("page", String(nextPage)))}
+      onPageSizeChange={(nextPageSize) => updateSearchParams((params) => {
+        params.set("limit", String(nextPageSize));
+        params.set("page", "1");
+      })}
+      manualPagination
       getRowId={(row) => row.id}
       expansion="onDemand"
       loadChildren={(row) => timetableRepository.getAttendees(row.id)}
@@ -72,32 +121,13 @@ function TimetableTable({ rows, error, onRetry }: { rows: ClassSession[] | null;
 }
 
 export default function TimetablePage() {
-  const [rows, setRows] = useState<ClassSession[] | null>(null);
-  const [loadError, setLoadError] = useState(false);
-  const [loadAttempt, setLoadAttempt] = useState(0);
-
-  useEffect(() => {
-    let active = true;
-    timetableRepository.getClasses().then(
-      (classes) => { if (active) setRows(classes); },
-      () => { if (active) setLoadError(true); },
-    );
-    return () => { active = false; };
-  }, [loadAttempt]);
-
-  function retryLoading() {
-    setRows(null);
-    setLoadError(false);
-    setLoadAttempt((attempt) => attempt + 1);
-  }
-
   return (
     <section>
       <div className="flex flex-wrap items-center justify-between gap-4">
         <h1 className="m-0 text-[26px] leading-[1.15] font-bold text-[#184b3d] md:text-[30px]">TimeTable</h1>
       </div>
       <Suspense fallback={<DataTable<ClassSession, Attendee> columns={columns} rows={[]} loading initialPageSize={2} />}>
-        <TimetableTable rows={rows} error={loadError} onRetry={retryLoading} />
+        <TimetableTable />
       </Suspense>
     </section>
   );
