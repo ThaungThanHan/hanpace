@@ -1060,6 +1060,8 @@ function LogoSection({ children, onReady }, ref) {
         force3D: false,
         scale: ARTBOARD_LOGO.targetScale,
         transformOrigin: "center center",
+        x: 0,
+        y: 0,
         xPercent: artboardLogoTargetXPercent,
         yPercent: artboardLogoTargetYPercent,
       });
@@ -1077,6 +1079,9 @@ function LogoSection({ children, onReady }, ref) {
       gsap.set(featured, {
         autoAlpha: 1,
         transformOrigin: "center center",
+        // Clear pixel offsets parsed from CSS centering before applying percentages.
+        x: 0,
+        y: 0,
         xPercent: -50,
         yPercent: -50,
       });
