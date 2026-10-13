@@ -1,11 +1,17 @@
 # Thaung Than Han
 
-This pnpm workspace contains two independent Next.js apps. "part-1" is for landing page UI and "part-2" is the dashboard for fitness timetable.
+This pnpm workspace contains two independent Next.js apps for the frontend engineering assessment: an animated Pace landing page and a fitness dashboard with timetable and member views.
 
-| App | Directory | Development URL |
-| --- | --- | --- |
-| Pace landing page | `part-1/` | http://localhost:3000 |
-| fitness dashboard | `part-2/` | http://localhost:3001 |
+## Live Deployments and Documentation
+
+| Part | Live deployment | Documentation | Local development |
+| --- | --- | --- | --- |
+| Part 1 — Pace landing page | [Open landing page](https://thaungthanhan-part1-landingpage.vercel.app/) | [Part 1 README](part-1/README.md) | http://localhost:3000 |
+| Part 2 — Fitness dashboard | [Open fitness dashboard](https://thaungthanhan-part2-fitnessdashboar.vercel.app/) | [Part 2 README](part-2/README.md) | http://localhost:3001 |
+
+Each part's README explains its implementation, behavior, and limitations.
+
+## Local Setup
 
 Install dependencies once at the repository root:
 
