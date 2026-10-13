@@ -13,8 +13,10 @@ import {
 } from "@/components/landing/LogoSection";
 
 const SECTION_NAMES = ["hero", "logo"] as const;
-const WHEEL_THRESHOLD = 20;
+const WHEEL_THRESHOLD = 20; // pixels
+const WHEEL_IDLE_TIMEOUT = 180;
 const SWIPE_THRESHOLD = 48;
+const SWIPE_AXIS_RATIO = 1.25;
 const SECTION_DURATION = 1.5;
 const REDUCED_SECTION_DURATION = 0.24;
 
@@ -60,7 +62,8 @@ export function LandingPage({ navigationEnabled, onReady }: LandingPageProps) {
   const activeSectionRef = useRef(0);
   const isTransitioning = useRef(false);
   const reduceMotionRef = useRef(false);
-  const touchStartY = useRef<number | null>(null);
+  const wheelGesture = useRef({ distance: 0, lastEventTime: 0 });
+  const touchStart = useRef<{ identifier: number; x: number; y: number } | null>(null);
 
   const goToSection = useCallback(
     (nextIndex: number) => {
@@ -77,6 +80,8 @@ export function LandingPage({ navigationEnabled, onReady }: LandingPageProps) {
       }
 
       isTransitioning.current = true;
+      wheelGesture.current.distance = 0;
+      touchStart.current = null;
       activeSectionRef.current = nextIndex;
       setActiveSection(nextIndex);
 
@@ -112,18 +117,46 @@ export function LandingPage({ navigationEnabled, onReady }: LandingPageProps) {
   }, []);
 
   useEffect(() => {
+    wheelGesture.current.distance = 0;
+    touchStart.current = null;
     if (!navigationEnabled) {
       return;
     }
 
+    const rootStyle = window.getComputedStyle(document.documentElement);
+    const lineHeight = Number.parseFloat(rootStyle.lineHeight)
+      || Number.parseFloat(rootStyle.fontSize) * 1.2
+      || 16;
+
     const handleWheel = (event: WheelEvent) => {
       event.preventDefault();
 
-      if (Math.abs(event.deltaY) < WHEEL_THRESHOLD) {
+      const gesture = wheelGesture.current;
+      if (isTransitioning.current) {
+        gesture.distance = 0;
         return;
       }
 
-      goToSection(activeSectionRef.current + (event.deltaY > 0 ? 1 : -1));
+      // Read deltaMode before deltaY: wheel units can be pixels, lines, or pages.
+      const unit = event.deltaMode === 1 ? lineHeight
+        : event.deltaMode === 2 ? window.innerHeight : 1;
+      const distance = event.deltaY * unit;
+      if (distance === 0) return;
+
+      if (
+        event.timeStamp - gesture.lastEventTime > WHEEL_IDLE_TIMEOUT ||
+        Math.sign(distance) !== Math.sign(gesture.distance)
+      ) {
+        gesture.distance = 0;
+      }
+      gesture.distance += distance;
+      gesture.lastEventTime = event.timeStamp;
+
+      if (Math.abs(gesture.distance) < WHEEL_THRESHOLD) return;
+
+      const direction = gesture.distance > 0 ? 1 : -1;
+      gesture.distance = 0;
+      goToSection(activeSectionRef.current + direction);
     };
 
     window.addEventListener("wheel", handleWheel, { passive: false });
@@ -132,25 +165,37 @@ export function LandingPage({ navigationEnabled, onReady }: LandingPageProps) {
   }, [goToSection, navigationEnabled]);
 
   const handleTouchStart = (event: TouchEvent<HTMLElement>) => {
-    touchStartY.current = event.changedTouches[0]?.clientY ?? null;
+    touchStart.current = null;
+    if (!navigationEnabled || isTransitioning.current || event.touches.length !== 1) return;
+
+    const touch = event.touches[0];
+    touchStart.current = { identifier: touch.identifier, x: touch.clientX, y: touch.clientY };
+  };
+
+  const cancelTouch = () => {
+    touchStart.current = null;
+  };
+
+  const handleTouchMove = (event: TouchEvent<HTMLElement>) => {
+    if (event.touches.length !== 1 || event.touches[0].identifier !== touchStart.current?.identifier) {
+      cancelTouch();
+    }
   };
 
   const handleTouchEnd = (event: TouchEvent<HTMLElement>) => {
-    if (touchStartY.current === null) {
-      return;
-    }
+    const start = touchStart.current;
+    cancelTouch();
+    if (!start || event.touches.length !== 0 || event.changedTouches.length !== 1) return;
 
-    const touchEndY = event.changedTouches[0]?.clientY;
+    const touch = event.changedTouches[0];
+    if (touch.identifier !== start.identifier) return;
 
-    if (touchEndY === undefined) {
-      touchStartY.current = null;
-      return;
-    }
-
-    const distance = touchStartY.current - touchEndY;
-    touchStartY.current = null;
-
-    if (Math.abs(distance) < SWIPE_THRESHOLD) {
+    const distance = start.y - touch.clientY;
+    const horizontalDistance = Math.abs(start.x - touch.clientX);
+    if (
+      Math.abs(distance) < SWIPE_THRESHOLD ||
+      Math.abs(distance) <= horizontalDistance * SWIPE_AXIS_RATIO
+    ) {
       return;
     }
 
@@ -160,7 +205,9 @@ export function LandingPage({ navigationEnabled, onReady }: LandingPageProps) {
   return (
     <main
       className="fixed inset-0 overflow-hidden bg-[#f6ead7]"
+      onTouchCancel={cancelTouch}
       onTouchEnd={handleTouchEnd}
+      onTouchMove={handleTouchMove}
       onTouchStart={handleTouchStart}
     >
       <LogoSection

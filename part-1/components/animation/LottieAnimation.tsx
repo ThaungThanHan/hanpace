@@ -4,10 +4,10 @@ import {
   forwardRef,
   useEffect,
   useImperativeHandle,
-  useMemo,
   useRef,
 } from "react";
 import lottie, { type AnimationItem } from "lottie-web";
+import { createLottiePlayback } from "./lottiePlayback";
 
 type LottiePosition = number | string;
 
@@ -20,9 +20,12 @@ export type LottieAnimationHandle = {
 type LottieAnimationProps = {
   lottieName: string;
   loop?: boolean;
+  /** Reactive playback intent; a changed value overrides the last play/pause call. */
   autoplay?: boolean;
   speed?: number;
+  /** Seconds from creation (or a delay update) before first playback; play() honors it. */
   delay?: number;
+  /** Starting position in seconds; changing it seeks without changing playback intent. */
   startOffset?: number;
   size?: number | string;
   positionX?: LottiePosition;
@@ -34,6 +37,7 @@ type LottieAnimationProps = {
   className?: string;
   ariaLabel?: string;
   onReady?: () => void;
+  onError?: (error: Error) => void;
 };
 
 function toCssLength(value: LottiePosition = 0) {
@@ -69,205 +73,98 @@ export const LottieAnimation = forwardRef<
     className = "",
     ariaLabel,
     onReady,
+    onError,
   },
   ref,
 ) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const animationRef = useRef<AnimationItem | null>(null);
-  const manuallyPausedRef = useRef(false);
-  const onReadyRef = useRef(onReady);
-  const playbackRef = useRef({
-    autoplay,
-    delay,
-    loop,
-    speed,
-    startOffset,
-  });
-  const animationPath = useMemo(
-    () => resolveLottiePath(lottieName),
-    [lottieName],
-  );
+  const controllerRef = useRef<ReturnType<typeof createLottiePlayback> | null>(null);
+  // Preserve imperative requests made before the effect or when the asset changes.
+  const playingOverrideRef = useRef<boolean | null>(null);
+  const speedOverrideRef = useRef<number | null>(null);
+  const optionsRef = useRef({ autoplay, delay, loop, speed, startOffset });
+  const callbacksRef = useRef({ onReady, onError });
+  const animationPath = resolveLottiePath(lottieName);
 
-  useImperativeHandle(
-    ref,
-    () => ({
-      pause: () => {
-        manuallyPausedRef.current = true;
-        animationRef.current?.pause();
-      },
-      play: () => {
-        manuallyPausedRef.current = false;
-        if (!window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
-          animationRef.current?.play();
-        }
-      },
-      setSpeed: (value) => {
-        animationRef.current?.setSpeed(value);
-      },
-    }),
-    [],
-  );
+  useImperativeHandle(ref, () => ({
+    pause: () => {
+      playingOverrideRef.current = false;
+      controllerRef.current?.pause();
+    },
+    play: () => {
+      playingOverrideRef.current = true;
+      controllerRef.current?.play();
+    },
+    setSpeed: (value) => {
+      speedOverrideRef.current = value;
+      controllerRef.current?.setSpeed(value);
+    },
+  }), []);
 
   useEffect(() => {
-    playbackRef.current = {
-      autoplay,
-      delay,
-      loop,
-      speed,
-      startOffset,
-    };
+    callbacksRef.current = { onReady, onError };
+  }, [onReady, onError]);
+
+  useEffect(() => {
+    if (optionsRef.current.autoplay !== autoplay) playingOverrideRef.current = null;
+    if (optionsRef.current.speed !== speed) speedOverrideRef.current = null;
+    optionsRef.current = { autoplay, delay, loop, speed, startOffset };
+    controllerRef.current?.update(optionsRef.current);
   }, [autoplay, delay, loop, speed, startOffset]);
 
   useEffect(() => {
-    onReadyRef.current = onReady;
-  }, [onReady]);
-
-  useEffect(() => {
     const container = containerRef.current;
+    if (!container) return;
 
-    if (!container) {
+    const motionPreference = window.matchMedia("(prefers-reduced-motion: reduce)");
+    let animation: AnimationItem;
+    try {
+      animation = lottie.loadAnimation({
+        autoplay: false,
+        container,
+        loop: optionsRef.current.loop,
+        path: animationPath,
+        renderer: "svg",
+        rendererSettings: { progressiveLoad: true },
+      });
+    } catch (cause) {
+      callbacksRef.current.onError?.(new Error(`Could not load animation: ${animationPath}`, { cause }));
       return;
     }
 
-    const motionPreference = window.matchMedia(
-      "(prefers-reduced-motion: reduce)",
-    );
-    const reduceMotion = motionPreference.matches;
-    const playback = playbackRef.current;
+    const controller = createLottiePlayback(animation, optionsRef.current, motionPreference.matches);
+    controllerRef.current = controller;
+    if (playingOverrideRef.current !== null) {
+      if (playingOverrideRef.current) controller.play();
+      else controller.pause();
+    }
+    if (speedOverrideRef.current !== null) controller.setSpeed(speedOverrideRef.current);
 
-    const shouldAutoplay = reduceMotion
-      ? false
-      : playback.autoplay && playback.delay <= 0;
-
-    animationRef.current = lottie.loadAnimation({
-      autoplay: shouldAutoplay,
-      container,
-      loop: reduceMotion ? false : playback.loop,
-      path: animationPath,
-      renderer: "svg",
-      rendererSettings: {
-        progressiveLoad: true,
-      },
-    });
-    animationRef.current.setSpeed(playback.speed);
-    let timeout: number | undefined;
-    let ready = false;
-
-    const applyStartOffset = () => {
-      const animation = animationRef.current;
-
-      if (!animation) {
-        return;
-      }
-
-      const { startOffset: currentStartOffset } = playbackRef.current;
-
-      if (currentStartOffset <= 0) {
-        return;
-      }
-
-      const frameRate = animation.frameRate || 60;
-      const offsetFrame = currentStartOffset * frameRate;
-      animation.goToAndPlay(offsetFrame, true);
-    };
-    const showStillFrame = () => {
-      const animation = animationRef.current;
-
-      if (animation) {
-        const frame = playbackRef.current.startOffset > 0
-          ? playbackRef.current.startOffset * (animation.frameRate || 60)
-          : (animation.frameRate || 60) / 3;
-        animation.goToAndStop(Math.min(frame, animation.totalFrames - 1), true);
-      }
-    };
-    const handleReadyWithStartOffset = () => {
-      ready = true;
-      if (motionPreference.matches) {
-        showStillFrame();
-      } else {
-        applyStartOffset();
-      }
-      onReadyRef.current?.();
-    };
     const handleReady = () => {
-      ready = true;
-      if (motionPreference.matches) {
-        showStillFrame();
-      } else if (
-        playbackRef.current.autoplay &&
-        !manuallyPausedRef.current &&
-        timeout === undefined
-      ) {
-        applyStartOffset();
-        animationRef.current?.play();
-      }
-
-      onReadyRef.current?.();
+      if (controller.ready()) callbacksRef.current.onReady?.();
     };
-    const handleMotionChange = () => {
-      const animation = animationRef.current;
-
-      animation?.setLoop(
-        motionPreference.matches ? false : playbackRef.current.loop,
-      );
-      if (!ready || !animation) {
-        return;
-      }
-
-      if (motionPreference.matches) {
-        showStillFrame();
-      } else if (
-        playbackRef.current.autoplay &&
-        !manuallyPausedRef.current &&
-        timeout === undefined
-      ) {
-        applyStartOffset();
-        animation.play();
+    const handleError = () => {
+      if (controller.fail()) {
+        callbacksRef.current.onError?.(new Error(`Could not load or render animation: ${animationPath}`));
       }
     };
+    const handleMotionChange = () => controller.setReducedMotion(motionPreference.matches);
 
+    animation.addEventListener("DOMLoaded", handleReady);
+    animation.addEventListener("data_failed", handleError);
+    animation.addEventListener("error", handleError);
     motionPreference.addEventListener("change", handleMotionChange);
 
-    if (!reduceMotion && playback.autoplay && playback.delay <= 0) {
-      animationRef.current.addEventListener(
-        "DOMLoaded",
-        handleReadyWithStartOffset,
-      );
-    } else {
-      animationRef.current.addEventListener("DOMLoaded", handleReady);
-    }
-
-    if (!reduceMotion && playback.autoplay && playback.delay > 0) {
-      timeout = window.setTimeout(() => {
-        timeout = undefined;
-        if (motionPreference.matches) {
-          return;
-        }
-        applyStartOffset();
-        animationRef.current?.play();
-      }, playback.delay * 1000);
-    }
-
     return () => {
-      if (timeout !== undefined) {
-        window.clearTimeout(timeout);
-      }
-
+      controller.dispose();
+      controllerRef.current = null;
       motionPreference.removeEventListener("change", handleMotionChange);
-
-      animationRef.current?.removeEventListener(
-        "DOMLoaded",
-        handleReadyWithStartOffset,
-      );
-      animationRef.current?.removeEventListener("DOMLoaded", handleReady);
-      animationRef.current?.destroy();
-      animationRef.current = null;
+      animation.removeEventListener("DOMLoaded", handleReady);
+      animation.removeEventListener("data_failed", handleError);
+      animation.removeEventListener("error", handleError);
+      animation.destroy();
     };
   }, [animationPath]);
-
-  useEffect(() => {
-    animationRef.current?.setSpeed(speed);
-  }, [speed]);
 
   return (
     <div
