@@ -1,18 +1,29 @@
-import type { Attendee, ClassSession } from "../common/schema";
+import type { Attendee, ClassSession, Rooms } from "../common/schema";
+
+export const mockRooms: Rooms[] = [
+  { id: 1, name: "Studio A", floor: 1 },
+  { id: 2, name: "Studio B", floor: 1 },
+  { id: 3,name: "Mat Room", floor: 2 },
+  { id: 4,name: "Spin Room", floor: 2 },
+  { id: 5,name: "Weights Hall", floor: 2 },
+  { id: 6,name: "Rooftop Deck", floor: 3 },
+  { id: 7,name: "Annex", floor: 3 },
+]
+
 
 export const mockClasses: ClassSession[] = [
-  { id: 1, name: "Yoga Flow", instructor: "Amelia Tan", date: "2026-10-12", startTime: "08:00", endTime: "09:00", durationMins: 60, capacity: 15, attendeeCount: 3, status: "Completed", capacityStatus: "Available" },
-  { id: 2, name: "Strength Basics", instructor: "Noah Lim", date: "2026-10-12", startTime: "10:00", endTime: "11:00", durationMins: 60, capacity: 2, attendeeCount: 2, status: "Scheduled", capacityStatus: "Full" },
-  { id: 3, name: "Lunch Break HIIT", instructor: "Sofia Chen", date: "2026-10-12", startTime: "12:15", endTime: "13:00", durationMins: 45, capacity: 20, attendeeCount: 2, status: "Scheduled", capacityStatus: "Available" },
-  { id: 4, name: "Core Foundations", instructor: "Maya Wong", date: "2026-10-12", startTime: "18:00", endTime: "18:50", durationMins: 50, capacity: 16, attendeeCount: 0, status: "Scheduled", capacityStatus: "Available" },
-  { id: 5, name: "Morning Pilates", instructor: "Amelia Tan", date: "2026-10-11", startTime: "07:30", endTime: "08:30", durationMins: 60, capacity: 12, attendeeCount: 2, status: "Completed", capacityStatus: "Available" },
-  { id: 6, name: "Evening Spin", instructor: "Noah Lim", date: "2026-10-11", startTime: "17:00", endTime: "18:00", durationMins: 60, capacity: 10, attendeeCount: 1, status: "Completed", capacityStatus: "Available" },
-  { id: 7, name: "Sunrise Yoga", instructor: "Amelia Tan", date: "2026-10-13", startTime: "07:00", endTime: "08:00", durationMins: 60, capacity: 12, attendeeCount: 3, status: "Scheduled", capacityStatus: "Available" },
-  { id: 8, name: "Boxing Basics", instructor: "Sofia Chen", date: "2026-10-13", startTime: "12:00", endTime: "13:00", durationMins: 60, capacity: 8, attendeeCount: 1, status: "Scheduled", capacityStatus: "Available" },
-  { id: 9, name: "Mobility & Stretch", instructor: "Maya Wong", date: "2026-10-13", startTime: "17:30", endTime: "18:15", durationMins: 45, capacity: 2, attendeeCount: 2, status: "Scheduled", capacityStatus: "Full" },
-  { id: 10, name: "Weekend Circuit", instructor: "Noah Lim", date: "2026-10-14", startTime: "09:00", endTime: "10:30", durationMins: 90, capacity: 18, attendeeCount: 0, status: "Cancelled", capacityStatus: "Available" },
-  { id: 11, name: "Barre Balance", instructor: "Maya Wong", date: "2026-10-14", startTime: "18:00", endTime: "19:00", durationMins: 60, capacity: 14, attendeeCount: 2, status: "Scheduled", capacityStatus: "Available" },
-  { id: 12, name: "Power Intervals", instructor: "Sofia Chen", date: "2026-10-10", startTime: "09:00", endTime: "09:45", durationMins: 45, capacity: 10, attendeeCount: 1, status: "Completed", capacityStatus: "Available" },
+  { id: 1, name: "Yoga Flow", roomId: 1, instructor: "Amelia Tan", date: "2026-10-12", startTime: "08:00", endTime: "09:00", durationMins: 60, capacity: 15, attendeeCount: 3, status: "Completed", capacityStatus: "Available" },
+  { id: 2, name: "Strength Basics", roomId: 4,instructor: "Noah Lim", date: "2026-10-12", startTime: "10:00", endTime: "11:00", durationMins: 60, capacity: 2, attendeeCount: 2, status: "Scheduled", capacityStatus: "Full" },
+  { id: 3, name: "Lunch Break HIIT", roomId: 1,instructor: "Sofia Chen", date: "2026-10-12", startTime: "12:15", endTime: "13:00", durationMins: 45, capacity: 20, attendeeCount: 2, status: "Scheduled", capacityStatus: "Available" },
+  { id: 4, name: "Core Foundations", roomId: 1,instructor: "Maya Wong", date: "2026-10-12", startTime: "18:00", endTime: "18:50", durationMins: 50, capacity: 16, attendeeCount: 0, status: "Scheduled", capacityStatus: "Available" },
+  { id: 5, name: "Morning Pilates", roomId: 2,instructor: "Amelia Tan", date: "2026-10-11", startTime: "07:30", endTime: "08:30", durationMins: 60, capacity: 12, attendeeCount: 2, status: "Completed", capacityStatus: "Available" },
+  { id: 6, name: "Evening Spin", roomId: 1,instructor: "Noah Lim", date: "2026-10-11", startTime: "17:00", endTime: "18:00", durationMins: 60, capacity: 10, attendeeCount: 1, status: "Completed", capacityStatus: "Available" },
+  { id: 7, name: "Sunrise Yoga", roomId: 3,instructor: "Amelia Tan", date: "2026-10-13", startTime: "07:00", endTime: "08:00", durationMins: 60, capacity: 12, attendeeCount: 3, status: "Scheduled", capacityStatus: "Available" },
+  { id: 8, name: "Boxing Basics", roomId: 1,instructor: "Sofia Chen", date: "2026-10-13", startTime: "12:00", endTime: "13:00", durationMins: 60, capacity: 8, attendeeCount: 1, status: "Scheduled", capacityStatus: "Available" },
+  { id: 9, name: "Mobility & Stretch", roomId: 1,instructor: "Maya Wong", date: "2026-10-13", startTime: "17:30", endTime: "18:15", durationMins: 45, capacity: 2, attendeeCount: 2, status: "Scheduled", capacityStatus: "Full" },
+  { id: 10, name: "Weekend Circuit", roomId: 7,instructor: "Noah Lim", date: "2026-10-14", startTime: "09:00", endTime: "10:30", durationMins: 90, capacity: 18, attendeeCount: 0, status: "Cancelled", capacityStatus: "Available" },
+  { id: 11, name: "Barre Balance", roomId: 1,instructor: "Maya Wong", date: "2026-10-14", startTime: "18:00", endTime: "19:00", durationMins: 60, capacity: 14, attendeeCount: 2, status: "Scheduled", capacityStatus: "Available" },
+  { id: 12, name: "Power Intervals", roomId: 1,instructor: "Sofia Chen", date: "2026-10-10", startTime: "09:00", endTime: "09:45", durationMins: 45, capacity: 10, attendeeCount: 1, status: "Completed", capacityStatus: "Available" },
 ];
 
 export const mockAttendeesByClass: Record<number, Attendee[]> = {

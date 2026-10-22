@@ -85,7 +85,7 @@ export interface ClassSession {
 
   name: string;
   instructor: string;
-
+  roomId: number;
   date: string;
   startTime: string;
   endTime: string;
@@ -96,4 +96,10 @@ export interface ClassSession {
 
   status: ClassStatus;
   capacityStatus: CapacityStatus;
+}
+
+export interface Rooms {
+  id: number;
+  name: string;
+  floor: number
 }

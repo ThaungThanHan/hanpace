@@ -161,7 +161,22 @@ export function LandingPage({ navigationEnabled, onReady }: LandingPageProps) {
 
     window.addEventListener("wheel", handleWheel, { passive: false });
 
-    return () => window.removeEventListener("wheel", handleWheel);
+    // keyboard
+    const handleKeyDown = () => {
+      goToSection(activeSectionRef.current + 1)
+    }
+    window.addEventListener("keydown",handleKeyDown)
+
+    const handleKeyUp = () => {
+      goToSection(activeSectionRef.current - 1)
+    }
+    window.addEventListener("keyup", handleKeyUp)
+
+    return () => {
+      window.removeEventListener("wheel", handleWheel);
+      window.removeEventListener("keydown", handleKeyDown)
+      window.removeEventListener("keyup", handleKeyUp)
+    }
   }, [goToSection, navigationEnabled]);
 
   const handleTouchStart = (event: TouchEvent<HTMLElement>) => {

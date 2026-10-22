@@ -4,6 +4,7 @@ export const FEATURED_ROW = 2;
 export const FEATURED_INDEX = 3;
 export const FEATURED_ROTATION = -90;
 export const FEATURED_FINAL_SPEED_RATIO = 0.3;
+export const FEATURED_HOVER_SPEED_RATIO = 2.5;
 export const CROWD_EXIT_DURATION = 0.58;
 export const CROWD_ROW_OFFSET = 0.06;
 export const CROWD_CHARACTER_STAGGER = 0.018;

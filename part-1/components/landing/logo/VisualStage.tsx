@@ -4,6 +4,7 @@ import { useCallback, useMemo, useState, type RefObject } from "react";
 import { LottieAnimation, type LottieAnimationHandle } from "@/components/animation/LottieAnimation";
 import { ArtboardItem, ArtboardLogo } from "./SceneArtwork";
 import type { CrowdItem, LottieLoadStatus } from "./crowd";
+import { FEATURED_HOVER_SPEED_RATIO } from "./sceneConfig";
 
 function SectionArtwork({
   sectionArtRef,
@@ -56,7 +57,11 @@ function CrowdCharacter({
         zIndex: item.z,
       }}
     >
-      <div data-crowd-row={featured ? undefined : item.rowIndex} className="h-full w-full">
+      <div 
+      onMouseOver={() => {
+        featuredLottieRef?.current?.setSpeed(item.speed * 2)
+      }}
+      data-crowd-row={featured ? undefined : item.rowIndex} className="h-full w-full">
         {animationFailed ? (
           // Show the first frame of the existing ten-frame standing sprite sheet.
           <div

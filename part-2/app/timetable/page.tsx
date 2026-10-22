@@ -8,10 +8,11 @@ import { formatDateTime } from "../lib/formatDateTime";
 import { timetableRepository } from "../../service/timetable/repository";
 import type { ClassPageResult } from "../../service/timetable/interface";
 import type { Attendee, ClassSession } from "../../service/common/schema";
-
+import { mockRooms } from "@/service/timetable/data";
 const columns: DataTableColumn<ClassSession>[] = [
-  { id: "name", header: "Class", accessor: "name", width: 190, tabletWidth: 160, mobileWidth: 140, pinned: true, sortable: true },
-  { id: "instructor", header: "Instructor", accessor: "instructor", sortable: true },
+  { id: "name", header: "Class", accessor: "name", width: 190, tabletWidth: 160, mobileWidth: 140, sortable: true },
+  { id: "instructor", header: "Instructor", accessor: "instructor", sortable: true, pinned: true, },
+  { id: "roomId", header: "Room", accessor: "roomId", render: (row) => mockRooms[row.roomId - 1]?.name , sortable: true},
   { id: "date", header: "Date", accessor: "date", sortable: true },
   { id: "time", header: "Time", accessor: "startTime", render: (row) => `${row.startTime} - ${row.endTime}`, sortable: true },
   { id: "duration", header: "Duration", accessor: "durationMins", render: (row) => `${row.durationMins} min`, sortable: true },
